@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python teams_discord_webhook_bridge.py"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
