@@ -26,6 +26,9 @@ jobs:
             -project DogePowerControl.xcodeproj \
             -scheme DogePowerControl
 
+      - name: Install xcpretty
+        run: gem install xcpretty --no-document || true
+
       - name: Build for iOS (unsigned, generic device)
         run: |
           set -o pipefail
@@ -40,16 +43,33 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
             DEVELOPMENT_TEAM="" \
-            | xcpretty || true
+            2>&1 | tee build.log | (xcpretty || cat)
+          if grep -q "BUILD FAILED" build.log; then
+            echo "xcodebuild reported BUILD FAILED — see full log above"
+            exit 1
+          fi
+
+      - name: Diagnose build output structure
+        run: |
+          echo "--- Full build directory tree ---"
+          find build -maxdepth 6 -type d
+          echo "--- Searching for any .app bundles ---"
+          find build -iname "*.app" -type d
+          echo "--- Searching for any DogePowerControl* files ---"
+          find build -iname "*DogePowerControl*"
 
       - name: Locate built .app
         id: locate
         run: |
-          APP_PATH=$(find build -name "DogePowerControl.app" -path "*Release-iphoneos*" | head -n 1)
+          APP_PATH=$(find build -iname "DogePowerControl.app" -type d | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find build -name "DogePowerControl.app" | head -n 1)
+            APP_PATH=$(find build -iname "*.app" -type d | head -n 1)
           fi
           echo "App found at: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app bundle found anywhere under build/"
+            exit 1
+          fi
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Verify Info.plist required keys
