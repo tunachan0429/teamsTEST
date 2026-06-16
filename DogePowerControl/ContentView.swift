@@ -235,6 +235,28 @@ class PowerControlViewModel: ObservableObject {
     init() {
         addLog("SYSTEM READY.")
         startClock()
+        checkInitialStatus()
+    }
+
+    // 起動時に実際のPCの状態を確認し、isPoweredを正しい初期値に合わせる
+    private func checkInitialStatus() {
+        addLog("CHECKING HOST STATUS...")
+        Task { @MainActor in
+            let online = await TCPPing.check(host: settings.hostIP, port: settings.sshPort)
+            if online {
+                isPowered = true
+                startUptimeTimer()
+                currentImage = .doge
+                dogeLabel = "ONLINE"
+                pingMs = Int.random(in: 1...8)
+                addLog("HOST IS ONLINE.")
+            } else {
+                isPowered = false
+                currentImage = .doge
+                dogeLabel = "STANDBY"
+                addLog("HOST IS OFFLINE.")
+            }
+        }
     }
 
     private func startClock() {
