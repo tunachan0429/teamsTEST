@@ -2,6 +2,7 @@ import SwiftUI
 import Network
 import Citadel
 import NIOCore
+import Darwin
 
 // MARK: - Wake-on-LAN
 
@@ -28,42 +29,56 @@ struct WakeOnLan {
         var packet = [UInt8](repeating: 0xFF, count: 6)
         for _ in 0..<16 { packet += macBytes }
 
-        let udp = NWConnection(
-            host: NWEndpoint.Host(broadcastAddress),
-            port: NWEndpoint.Port(rawValue: port)!,
-            using: {
-                let params = NWParameters.udp
-                params.allowLocalEndpointReuse = true
-                // ブロードキャスト許可
-                params.requiredInterfaceType = .wifi
-                return params
-            }()
-        )
-        return try await withCheckedThrowingContinuation { cont in
-            udp.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    udp.send(content: Data(packet), completion: .contentProcessed { error in
-                        udp.cancel()
-                        if let error = error {
-                            cont.resume(throwing: error)
-                        } else {
-                            cont.resume()
-                        }
-                    })
-                case .failed(let error):
-                    cont.resume(throwing: error)
-                default:
-                    break
+        // 注意: Network.framework(NWConnection)はブロードキャスト送信時にSO_BROADCASTを
+        // 有効化しないため、iOS上では "Permission denied" (errno 13) で失敗する。
+        // そのため生のBSDソケットでSO_BROADCASTを明示的に有効化して送信する。
+        try Self.sendBroadcastPacket(packet, to: broadcastAddress, port: port)
+    }
+
+    private static func sendBroadcastPacket(_ packet: [UInt8], to address: String, port: UInt16) throws {
+        let sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard sock >= 0 else {
+            throw WoLError.socketError("ソケットの作成に失敗しました (errno: \(errno))")
+        }
+        defer { close(sock) }
+
+        var broadcastEnable: Int32 = 1
+        guard setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+            throw WoLError.socketError("ブロードキャスト設定に失敗しました (errno: \(errno))")
+        }
+
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        guard inet_pton(AF_INET, address, &addr.sin_addr) == 1 else {
+            throw WoLError.socketError("ブロードキャストアドレスの形式が無効です: \(address)")
+        }
+
+        let sentBytes = withUnsafePointer(to: &addr) { ptr -> Int in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                packet.withUnsafeBufferPointer { bufferPtr in
+                    sendto(sock, bufferPtr.baseAddress, bufferPtr.count, 0, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
                 }
             }
-            udp.start(queue: .global())
+        }
+
+        guard sentBytes == packet.count else {
+            throw WoLError.socketError("パケットの送信に失敗しました (errno: \(errno))")
         }
     }
 
     enum WoLError: LocalizedError {
         case invalidMacAddress
-        var errorDescription: String? { "MACアドレスの形式が無効です" }
+        case socketError(String)
+        var errorDescription: String? {
+            switch self {
+            case .invalidMacAddress:
+                return "MACアドレスの形式が無効です"
+            case .socketError(let message):
+                return message
+            }
+        }
     }
 }
 
