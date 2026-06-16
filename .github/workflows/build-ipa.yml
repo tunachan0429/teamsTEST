@@ -46,6 +46,7 @@ jobs:
             -project DogePowerControl.xcodeproj \
             -scheme DogePowerControl \
             -configuration Release \
+            -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
@@ -53,6 +54,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
             DEVELOPMENT_TEAM="" \
+            ONLY_ACTIVE_ARCH=NO \
             2>&1 | tee build.log
           EXIT_CODE=${PIPESTATUS[0]}
           echo "xcodebuild exit code: $EXIT_CODE"
