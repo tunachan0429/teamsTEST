@@ -23,11 +23,20 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Show available Xcode installs (diagnostic)
-        run: ls /Applications/ | grep Xcode
-
-      - name: Show available SDKs (diagnostic)
-        run: xcodebuild -showsdks
+      - name: Fix Assets.xcassets
+        run: |
+          ASSETS="DogePowerControl/Assets.xcassets"
+          # AppIconを完全に作り直す（空のイメージセット）
+          rm -rf "$ASSETS/AppIcon.appiconset"
+          mkdir -p "$ASSETS/AppIcon.appiconset"
+          cat > "$ASSETS/AppIcon.appiconset/Contents.json" << 'EOF'
+          {
+            "images": [],
+            "info": { "author": "xcode", "version": 1 }
+          }
+          EOF
+          echo "--- Assets structure ---"
+          find "$ASSETS" -type f
 
       - name: Resolve Swift Package dependencies
         run: |
@@ -43,10 +52,6 @@ jobs:
             cat resolve.log
             exit 1
           fi
-
-      - name: List available schemes (diagnostic)
-        run: |
-          xcodebuild -list -project DogePowerControl.xcodeproj || true
 
       - name: Build for iOS (unsigned)
         run: |
@@ -71,15 +76,6 @@ jobs:
             tail -n 150 build.log
             exit 1
           fi
-
-      - name: Diagnose build output structure
-        run: |
-          echo "--- Full build directory tree ---"
-          find build -maxdepth 6 -type d
-          echo "--- Searching for any .app bundles ---"
-          find build -iname "*.app" -type d
-          echo "--- Searching for any DogePowerControl* files ---"
-          find build -iname "*DogePowerControl*"
 
       - name: Locate built .app
         id: locate
