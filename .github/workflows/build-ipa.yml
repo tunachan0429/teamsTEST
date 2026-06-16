@@ -22,12 +22,22 @@ jobs:
 
       - name: Resolve Swift Package dependencies
         run: |
+          set -o pipefail
           xcodebuild -resolvePackageDependencies \
             -project DogePowerControl.xcodeproj \
-            -scheme DogePowerControl
+            -scheme DogePowerControl \
+            2>&1 | tee resolve.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "resolvePackageDependencies exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "===== full resolve log ====="
+            cat resolve.log
+            exit 1
+          fi
 
-      - name: Install xcpretty
-        run: gem install xcpretty --no-document || true
+      - name: List available schemes (diagnostic)
+        run: |
+          xcodebuild -list -project DogePowerControl.xcodeproj || true
 
       - name: Build for iOS (unsigned, generic device)
         run: |
@@ -43,9 +53,12 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
             DEVELOPMENT_TEAM="" \
-            2>&1 | tee build.log | (xcpretty || cat)
-          if grep -q "BUILD FAILED" build.log; then
-            echo "xcodebuild reported BUILD FAILED — see full log above"
+            2>&1 | tee build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "xcodebuild exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "===== last 150 lines of build log ====="
+            tail -n 150 build.log
             exit 1
           fi
 
